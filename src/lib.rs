@@ -1,20 +1,16 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         mpsc::{channel, Receiver, Sender},
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
-    time::Duration,
 };
 
 type Task = Box<dyn FnOnce() + Send + 'static>;
-type ThreadData = Arc<(AtomicBool, Mutex<Receiver<Task>>)>;
 
 pub struct ThreadPool {
-    workers: Vec<Worker>,
     sender: Sender<Task>,
-    thread_data: ThreadData,
+    workers: Vec<Worker>,
 }
 
 impl ThreadPool {
@@ -23,14 +19,14 @@ impl ThreadPool {
         assert!(thread_num > 0);
 
         let (sender, receiver) = channel();
-        let thread_data = Arc::new((AtomicBool::new(true), Mutex::new(receiver)));
+        let receiver = Arc::new(Mutex::new(receiver));
 
         let mut workers = Vec::with_capacity(thread_num);
         for id in 0..thread_num {
-            workers.push(Worker::new(id, thread_data.clone()));
+            workers.push(Worker::new(id, receiver.clone()));
         }
 
-        Self { workers, sender, thread_data }
+        Self { sender, workers }
     }
 
     /// Push a task
@@ -39,26 +35,26 @@ impl ThreadPool {
     }
 }
 
-impl Drop for ThreadPool {
-    fn drop(&mut self) {
-        self.thread_data.0.store(false, Ordering::Release);
-    }
-}
-
 struct Worker(Option<JoinHandle<()>>);
 
 impl Worker {
-    fn new(id: usize, thread_data: ThreadData) -> Self {
+    fn new(id: usize, receiver: Arc<Mutex<Receiver<Task>>>) -> Self {
         let handle = thread::spawn(move || {
-            while thread_data.0.load(Ordering::Acquire) {
-                let task = thread_data.1
+            loop {
+                let task = receiver
                     .lock()
                     .unwrap()
-                    .recv_timeout(Duration::from_millis(1000));
+                    .recv();
 
-                if let Ok(task) = task {
-                    println!("Worker[{id}] received a task!");
-                    task();
+                match task {
+                    Ok(task) => {
+                        println!("Worker[{id}] received a task!");
+                        task();
+                    },
+                    Err(_) => {
+                        println!("Worker[{id}] disconnected!");
+                        break;
+                    },
                 }
             }
         });
@@ -81,7 +77,7 @@ impl Drop for Worker {
 mod tests {
     use super::*;
 
-    use std::thread::sleep;
+    use std::{thread::sleep, time::Duration};
 
     #[test]
     fn push_tasks() {
