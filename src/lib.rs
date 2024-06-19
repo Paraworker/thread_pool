@@ -3,11 +3,14 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-type Task = Box<dyn FnOnce() + Send + 'static>;
+enum Message {
+    NewTask(Box<dyn FnOnce() + Send + 'static>),
+    Terminate,
+}
 
 pub struct ThreadPool {
-    sender: Sender<Task>,
     workers: Vec<Worker>,
+    sender: Sender<Message>,
 }
 
 impl ThreadPool {
@@ -23,46 +26,62 @@ impl ThreadPool {
             workers.push(Worker::new(id, receiver.clone()));
         }
 
-        Self { sender, workers }
+        Self { workers, sender }
     }
 
-    /// Push a task
-    pub fn push(&self, task: impl FnOnce() + Send + 'static) {
-        self.sender.send(Box::new(task)).unwrap();
+    /// Execute a task
+    pub fn execute<Task>(&self, task: Task)
+    where
+        Task: FnOnce() + Send + 'static
+    {
+        self.sender.send(Message::NewTask(Box::new(task))).unwrap();
     }
 }
 
-struct Worker(Option<JoinHandle<()>>);
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        for _ in 0..self.workers.len() {
+            self.sender.send(Message::Terminate).unwrap();
+        }
+
+        self.workers.clear();
+    }
+}
+
+struct Worker {
+    thread: Option<JoinHandle<()>>,
+}
 
 impl Worker {
-    fn new(id: usize, receiver: Arc<Mutex<Receiver<Task>>>) -> Self {
+    fn new(id: usize, receiver: Arc<Mutex<Receiver<Message>>>) -> Self {
         let handle = thread::spawn(move || {
             loop {
-                let task = receiver
+                let message = receiver
                     .lock()
                     .unwrap()
-                    .recv();
+                    .recv()
+                    .unwrap();
 
-                match task {
-                    Ok(task) => {
+                match message {
+                    Message::NewTask(task) => {
                         println!("Worker[{id}] received a task!");
                         task();
                     },
-                    Err(_) => {
-                        println!("Worker[{id}] disconnected!");
+                    Message::Terminate => {
+                        println!("Worker[{id}] terminate!");
                         break;
                     },
                 }
             }
         });
 
-        Self(Some(handle))
+        Self { thread: Some(handle) }
     }
 }
 
 impl Drop for Worker {
     fn drop(&mut self) {
-        self.0
+        self.thread
             .take()
             .unwrap()
             .join()
@@ -77,26 +96,26 @@ mod tests {
     use std::{thread::sleep, time::Duration};
 
     #[test]
-    fn push_tasks() {
+    fn execute_tasks() {
         let pool = ThreadPool::new(5);
 
         sleep(Duration::from_millis(1000));
 
-        pool.push(|| {
+        pool.execute(|| {
             for index in 0..100 {
                 println!("In Task1 [{index}]");
                 sleep(Duration::from_millis(100));
             }
         });
 
-        pool.push(|| {
+        pool.execute(|| {
             for index in 0..100 {
                 println!("In Task2 [{index}]");
                 sleep(Duration::from_millis(100));
             }
         });
 
-        pool.push(|| {
+        pool.execute(|| {
             for index in 0..100 {
                 println!("In Task3 [{index}]");
                 sleep(Duration::from_millis(100));
