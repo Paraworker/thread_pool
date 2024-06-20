@@ -2,6 +2,7 @@ use std::{
     sync::{mpsc::{channel, Receiver, Sender}, Arc, Mutex},
     thread::{self, JoinHandle},
 };
+use log::info;
 
 enum Message {
     NewTask(Box<dyn FnOnce() + Send + 'static>),
@@ -64,11 +65,11 @@ impl Worker {
 
                 match message {
                     Message::NewTask(task) => {
-                        println!("Worker[{id}] received a task!");
+                        info!("Worker[{id}] received a task!");
                         task();
                     },
                     Message::Terminate => {
-                        println!("Worker[{id}] terminate!");
+                        info!("Worker[{id}] terminate!");
                         break;
                     },
                 }
