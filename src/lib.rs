@@ -1,17 +1,17 @@
-use std::{
-    sync::{mpsc::{channel, Receiver, Sender}, Arc, Mutex},
-    thread::{self, JoinHandle},
-};
+use blocking_queue::BlockingQueue;
 use log::info;
+use std::{sync::Arc, thread::{self, JoinHandle}};
+
+mod blocking_queue;
 
 enum Message {
-    NewTask(Box<dyn FnOnce() + Send + 'static>),
+    NewTask(Box<dyn FnOnce() + Send>),
     Terminate,
 }
 
 pub struct ThreadPool {
     workers: Vec<Worker>,
-    sender: Sender<Message>,
+    queue: Arc<BlockingQueue<Message>>,
 }
 
 impl ThreadPool {
@@ -19,15 +19,14 @@ impl ThreadPool {
     pub fn new(thread_num: usize) -> Self {
         assert!(thread_num > 0);
 
-        let (sender, receiver) = channel();
-        let receiver = Arc::new(Mutex::new(receiver));
+        let queue = Arc::new(BlockingQueue::new());
 
         let mut workers = Vec::with_capacity(thread_num);
         for id in 0..thread_num {
-            workers.push(Worker::new(id, receiver.clone()));
+            workers.push(Worker::new(id, Arc::clone(&queue)));
         }
 
-        Self { workers, sender }
+        Self { workers, queue }
     }
 
     /// Execute a task
@@ -35,14 +34,14 @@ impl ThreadPool {
     where
         Task: FnOnce() + Send + 'static
     {
-        self.sender.send(Message::NewTask(Box::new(task))).unwrap();
+        self.queue.push(Message::NewTask(Box::new(task)));
     }
 }
 
 impl Drop for ThreadPool {
     fn drop(&mut self) {
         for _ in 0..self.workers.len() {
-            self.sender.send(Message::Terminate).unwrap();
+            self.queue.push(Message::Terminate);
         }
 
         self.workers.clear();
@@ -54,16 +53,10 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(id: usize, receiver: Arc<Mutex<Receiver<Message>>>) -> Self {
+    fn new(id: usize, queue: Arc<BlockingQueue<Message>>) -> Self {
         let handle = thread::spawn(move || {
             loop {
-                let message = receiver
-                    .lock()
-                    .unwrap()
-                    .recv()
-                    .unwrap();
-
-                match message {
+                match queue.pop() {
                     Message::NewTask(task) => {
                         info!("Worker[{id}] received a task!");
                         task();
@@ -99,8 +92,6 @@ mod tests {
     #[test]
     fn execute_tasks() {
         let pool = ThreadPool::new(5);
-
-        sleep(Duration::from_millis(1000));
 
         pool.execute(|| {
             for index in 0..100 {
