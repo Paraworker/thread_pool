@@ -7,3 +7,7 @@ edition = "2021"
 
 [dependencies]
 log = "0.4.21"
+
+[[test]]
+name = "integration_test"
+path = "tests/tests.rs"
