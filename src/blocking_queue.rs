@@ -6,7 +6,7 @@ pub(crate) struct BlockingQueue<T> {
 }
 
 impl<T> BlockingQueue<T> {
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             list: Mutex::new(LinkedList::new()),
             cvar: Condvar::new(),
