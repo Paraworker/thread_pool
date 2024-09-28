@@ -36,3 +36,9 @@ impl<T> BlockingQueue<T> {
         guard.pop_front().unwrap()
     }
 }
+
+impl<T> Default for BlockingQueue<T> {
+    fn default() -> Self {
+        const { Self::new() }
+    }
+}
