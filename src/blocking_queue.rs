@@ -1,39 +1,34 @@
-use std::{collections::LinkedList, sync::{Condvar, Mutex}};
+use std::{
+    collections::LinkedList,
+    sync::{Condvar, Mutex},
+};
 
-pub(crate) struct BlockingQueue<T> {
+pub struct BlockingQueue<T> {
     list: Mutex<LinkedList<T>>,
     cvar: Condvar,
 }
 
 impl<T> BlockingQueue<T> {
-    pub(crate) const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             list: Mutex::new(LinkedList::new()),
             cvar: Condvar::new(),
         }
     }
 
-    pub(crate) fn push(&self, data: T) {
-        self.list
-            .lock()
-            .unwrap()
-            .push_back(data);
-
+    pub fn push(&self, data: T) {
+        self.list.lock().unwrap().push_back(data);
         self.cvar.notify_one();
     }
 
-    pub(crate) fn pop(&self) -> T {
-        let mut guard = self.list
-            .lock()
-            .unwrap();
+    pub fn pop(&self) -> T {
+        let mut list = self.list.lock().unwrap();
 
-        while guard.is_empty() {
-            guard = self.cvar
-                .wait(guard)
-                .unwrap();
+        while list.is_empty() {
+            list = self.cvar.wait(list).unwrap();
         }
 
-        guard.pop_front().unwrap()
+        list.pop_front().unwrap()
     }
 }
 
