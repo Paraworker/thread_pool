@@ -1,34 +1,34 @@
 use std::{
-    collections::LinkedList,
+    collections::VecDeque,
     sync::{Condvar, Mutex},
 };
 
 pub struct BlockingQueue<T> {
-    list: Mutex<LinkedList<T>>,
+    deque: Mutex<VecDeque<T>>,
     cvar: Condvar,
 }
 
 impl<T> BlockingQueue<T> {
     pub const fn new() -> Self {
         Self {
-            list: Mutex::new(LinkedList::new()),
+            deque: Mutex::new(VecDeque::new()),
             cvar: Condvar::new(),
         }
     }
 
     pub fn push(&self, data: T) {
-        self.list.lock().unwrap().push_back(data);
+        self.deque.lock().unwrap().push_back(data);
         self.cvar.notify_one();
     }
 
     pub fn pop(&self) -> T {
-        let mut list = self.list.lock().unwrap();
+        let mut deque = self.deque.lock().unwrap();
 
-        while list.is_empty() {
-            list = self.cvar.wait(list).unwrap();
+        while deque.is_empty() {
+            deque = self.cvar.wait(deque).unwrap();
         }
 
-        list.pop_front().unwrap()
+        deque.pop_front().unwrap()
     }
 }
 
