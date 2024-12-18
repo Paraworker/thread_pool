@@ -1,9 +1,14 @@
-use std::{thread::sleep, time::Duration};
+use std::{
+    num::NonZeroUsize,
+    thread::sleep,
+    time::Duration,
+};
+
 use thread_pool::ThreadPool;
 
 #[test]
 fn execute_tasks() {
-    let pool = ThreadPool::new(5);
+    let pool = ThreadPool::new(NonZeroUsize::new(5).unwrap());
 
     pool.execute(|| {
         for index in 0..100 {

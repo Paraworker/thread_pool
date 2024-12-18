@@ -1,4 +1,5 @@
 use std::{
+    num::NonZeroUsize,
     sync::Arc,
     thread::{self, JoinHandle},
 };
@@ -20,13 +21,11 @@ pub struct ThreadPool {
 
 impl ThreadPool {
     /// Create a thread pool with the given thread number
-    pub fn new(thread_num: usize) -> Self {
-        assert!(thread_num > 0);
-
+    pub fn new(thread_num: NonZeroUsize) -> Self {
         let queue = Arc::new(BlockingQueue::new());
 
-        let mut workers = Vec::with_capacity(thread_num);
-        for id in 0..thread_num {
+        let mut workers = Vec::with_capacity(thread_num.get());
+        for id in 0..thread_num.get() {
             workers.push(Worker::new(id, queue.clone()));
         }
 
