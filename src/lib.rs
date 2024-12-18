@@ -24,10 +24,9 @@ impl ThreadPool {
     pub fn new(thread_num: NonZeroUsize) -> Self {
         let queue = Arc::new(BlockingQueue::new());
 
-        let mut workers = Vec::with_capacity(thread_num.get());
-        for id in 0..thread_num.get() {
-            workers.push(Worker::new(id, queue.clone()));
-        }
+        let workers = (0..thread_num.get())
+            .map(|id| Worker::new(id, queue.clone()))
+            .collect();
 
         Self { workers, queue }
     }
