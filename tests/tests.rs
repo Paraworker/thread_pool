@@ -1,9 +1,4 @@
-use std::{
-    num::NonZeroUsize,
-    thread::sleep,
-    time::Duration,
-};
-
+use std::{num::NonZeroUsize, thread::sleep, time::Duration};
 use thread_pool::ThreadPool;
 
 #[test]

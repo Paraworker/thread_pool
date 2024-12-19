@@ -1,34 +1,31 @@
+use crossbeam_channel::{unbounded, Receiver, Sender};
+use log::info;
 use std::{
     num::NonZeroUsize,
-    sync::Arc,
     thread::{self, JoinHandle},
 };
 
-use blocking_queue::BlockingQueue;
-use log::info;
-
-mod blocking_queue;
-
-enum Message {
-    NewTask(Box<dyn FnOnce() + Send>),
-    Terminate,
-}
+type Task = Box<dyn FnOnce() + Send>;
 
 pub struct ThreadPool {
+    /// Order matters here
+    /// Drop sender first to stop workers
+    sender: Sender<Task>,
+
+    #[allow(dead_code)]
     workers: Vec<Worker>,
-    queue: Arc<BlockingQueue<Message>>,
 }
 
 impl ThreadPool {
     /// Create a thread pool with the given thread number
     pub fn new(thread_num: NonZeroUsize) -> Self {
-        let queue = Arc::new(BlockingQueue::new());
+        let (sender, receiver) = unbounded();
 
         let workers = (0..thread_num.get())
-            .map(|id| Worker::new(id, queue.clone()))
+            .map(|id| Worker::spawn(id, receiver.clone()))
             .collect();
 
-        Self { workers, queue }
+        Self { sender, workers }
     }
 
     /// Execute a task
@@ -36,17 +33,7 @@ impl ThreadPool {
     where
         Task: FnOnce() + Send + 'static,
     {
-        self.queue.push(Message::NewTask(Box::new(task)));
-    }
-}
-
-impl Drop for ThreadPool {
-    fn drop(&mut self) {
-        for _ in 0..self.workers.len() {
-            self.queue.push(Message::Terminate);
-        }
-
-        self.workers.clear();
+        self.sender.send(Box::new(task)).unwrap();
     }
 }
 
@@ -55,23 +42,19 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(id: usize, queue: Arc<BlockingQueue<Message>>) -> Self {
-        let handle = thread::spawn(move || loop {
-            match queue.pop() {
-                Message::NewTask(task) => {
-                    info!("Worker[{id}] received a task!");
-                    task();
-                }
-                Message::Terminate => {
-                    info!("Worker[{id}] terminate!");
-                    break;
-                }
-            }
-        });
-
+    fn spawn(id: usize, receiver: Receiver<Task>) -> Self {
         Self {
-            thread: Some(handle),
+            thread: Some(thread::spawn(move || Self::task_loop(id, receiver))),
         }
+    }
+
+    fn task_loop(id: usize, receiver: Receiver<Task>) {
+        while let Ok(task) = receiver.recv() {
+            info!("Worker[{id}] received a task!");
+            task();
+        }
+
+        info!("Worker[{id}] terminate!");
     }
 }
 
